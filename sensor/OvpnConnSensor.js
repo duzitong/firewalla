@@ -14,13 +14,13 @@
  */
 'use strict';
 
-let log = require('../net2/logger.js')(__filename);
-let util = require('util');
-let sem = require('../sensor/SensorEventManager.js').getInstance();
+const log = require('../net2/logger.js')(__filename);
+const util = require('util');
+const sem = require('../sensor/SensorEventManager.js').getInstance();
 const Tail = require('always-tail');
 const fs = require('fs');
 const cp = require('child_process');
-let Sensor = require('./Sensor.js').Sensor;
+const Sensor = require('./Sensor.js').Sensor;
 
 class OvpnConnSensor extends Sensor {
   constructor() {
@@ -30,14 +30,18 @@ class OvpnConnSensor extends Sensor {
   initLogWatcher() {
     if (!fs.existsSync(this.config.logPath)) {
       log.warn(util.format("Log file %s does not exist, awaiting for file creation.", this.config.logPath));
-      setTimeout(this.initLogWatcher, 5000);
+      setTimeout(() => {
+        this.initLogWatcher();
+      }, 5000);
     } else {
       // add read permission in case it is owned by root
       const cmd = util.format("sudo chmod +r %s", this.config.logPath);
       cp.exec(cmd, (err, stdout, stderr) => {
         if (err || stderr) {
           log.error(util.format("Failed to change permission for log file: %s", err || stderr));
-          setTimeout(this.initLogWatcher, 5000);
+          setTimeout(() => {
+            this.initLogWatcher();
+          }, 5000);
           return;
         }
         if (this.ovpnLog == null) {
@@ -49,7 +53,9 @@ class OvpnConnSensor extends Sensor {
               this.processOvpnLog(data);
             });
           } else {
-            setTimeout(this.initLogWatcher, 5000);
+            setTimeout(() => {
+              this.initLogWatcher();
+            }, 5000);
           }
         }
       });
@@ -63,10 +69,11 @@ class OvpnConnSensor extends Sensor {
   processOvpnLog(data) {
     if (data.includes(": pool returned")) {
       // vpn client connection accepted
-      const words = data.split(' ', 6);
+      const words = data.split(/\s+/, 6);
       const remote = words[5];
       const peers = data.substr(data.indexOf('pool returned') + 14);
       // remote should be <name>/<ip>:<port>
+      const profile = remote.split('/')[0];
       const client = remote.split('/')[1];
       const clientIP = client.split(':')[0];
       const clientPort = client.split(':')[1];
@@ -82,7 +89,7 @@ class OvpnConnSensor extends Sensor {
       if (peerIPv6Address === "(Not enabled)") {
         peerIPv6Address = null;
       }
-      log.info(util.format("VPN client connection accepted, remote: %s, peer ipv4: %s, peer ipv6: %s", client, peerIPv4Address, peerIPv6Address));
+      log.info(util.format("VPN client connection accepted, remote: %s, peer ipv4: %s, peer ipv6: %s, profile: %s", client, peerIPv4Address, peerIPv6Address, profile));
       sem.emitEvent({
         type: "VPNConnectionAccepted",
         message: "A new VPN connection was accepted",
@@ -90,7 +97,8 @@ class OvpnConnSensor extends Sensor {
           remoteIP: clientIP,
           remotePort: clientPort,
           peerIP4: peerIPv4Address,
-          peerIP6: peerIPv6Address
+          peerIP6: peerIPv6Address,
+          profile: profile
         }
       });
     }

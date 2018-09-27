@@ -72,6 +72,8 @@ const BLUE_HOLE_IP = "198.51.100.100"
 
 let DEFAULT_DNS_SERVER = (fConfig.dns && fConfig.dns.defaultDNSServer) || "8.8.8.8";
 
+let VERIFICATION_DOMAINS = (fConfig.dns && fConfig.dns.verificationDomains) || ["firewalla.encipher.io"];
+
 let RELOAD_INTERVAL = 3600 * 24 * 1000; // one day
 
 let statusCheckTimer = null;
@@ -134,6 +136,8 @@ module.exports = class DNSMASQ {
       setInterval(() => {
         this.checkIfWriteHostsFile();
       }, 10 * 1000);
+
+
     }
 
     return instance;
@@ -482,6 +486,21 @@ module.exports = class DNSMASQ {
     });
   }
 
+  async updateVpnIptablesRules(newVpnSubnet) {
+    const oldVpnSubnet = this.vpnSubnet;
+    const localIP = sysManager.myIp();
+    const dns = `${localIP}:8853`;
+    if (oldVpnSubnet != newVpnSubnet) {
+      if (oldVpnSubnet != null) {
+        // remove iptables rule for old vpn subnet
+        await iptables.dnsChangeAsync(oldVpnSubnet, dns, false);
+      }
+      // then add new iptables rule for new vpn subnet
+      await iptables.dnsChangeAsync(newVpnSubnet, dns, true);
+    }
+    this.vpnSubnet = newVpnSubnet
+  }
+
   async _add_all_iptables_rules() {
     await this._add_iptables_rules();
     await this._add_ip6tables_rules();
@@ -497,9 +516,11 @@ module.exports = class DNSMASQ {
       await iptables.dnsChangeAsync(subnet, dns, true);
     }
 
+    /* this will be done in DNSMASQSensor on demand.
     if(fConfig.vpnInterface && fConfig.vpnInterface.subnet) {
       await iptables.dnsChangeAsync(fConfig.vpnInterface.subnet, dns, true);
     }
+    */
   }
 
   async _add_ip6tables_rules() {
@@ -1022,25 +1043,27 @@ module.exports = class DNSMASQ {
   }
 
   async verifyDNSConnectivity() {
-    let cmd = `dig -4 +short +time=5 -p 8853 @localhost github.com`;
-    log.debug("Verifying DNS connectivity...")
+    for (let i in VERIFICATION_DOMAINS) {
+      const domain = VERIFICATION_DOMAINS[i];
+      let cmd = `dig -4 +short +time=5 -p 8853 @localhost ${domain}`;
+      log.debug(`Verifying DNS connectivity via ${domain}...`)
 
-    try {
-      let {stdout, stderr} = await execAsync(cmd);
-      if (stdout === "") {
-        log.error("Got empty dns result when verifying dns connectivity:", {})
-        return false
-      } else if (stderr !== "") {
-        log.error("Got error output when verifying dns connectivity:", cmd, result.stderr, {})
-        return false
-      } else {
-        log.debug("DNS connectivity looks good")
-        return true
+      try {
+        let {stdout, stderr} = await execAsync(cmd);
+        if (stdout === "") {
+          log.error(`Got empty dns result when verifying dns connectivity to ${domain}:`, {})
+        } else if (stderr !== "") {
+          log.error(`Got error output when verifying dns connectivity to ${domain}:`, cmd, result.stderr, {})
+        } else {
+          log.debug("DNS connectivity looks good")
+          return true
+        }
+      } catch (err) {
+        log.error(`Got error when verifying dns connectivity to ${domain}:`, err.stdout, {})
       }
-    } catch (err) {
-      log.error("Got error when verifying dns connectivity:", err.stdout, {})
-      return false
     }
+    log.error("DNS connectivity check fails to resolve all domains.");
+    return false;
   }
 
   async statusCheck() {

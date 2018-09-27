@@ -13,7 +13,7 @@
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 'use strict';
-let log = require('./logger.js')(__filename);
+const log = require('./logger.js')(__filename);
 
 var iptool = require('ip');
 var os = require('os');
@@ -29,6 +29,9 @@ let Promise = require('bluebird');
 
 const timeSeries = require('../util/TimeSeries.js').getTimeSeries()
 const getHitsAsync = Promise.promisify(timeSeries.getHits).bind(timeSeries)
+
+const platformLoader = require('../platform/PlatformLoader.js');
+const platform = platformLoader.getPlatform();
 
 var Spoofer = require('./Spoofer.js');
 var spoofer = null;
@@ -92,6 +95,8 @@ var linux = require('../util/linux.js');
 
 const HostTool = require('../net2/HostTool.js')
 const hostTool = new HostTool()
+
+const tokenManager = require('../util/FWTokenManager.js');
 
 /* alarms:
     alarmtype:  intel/newhost/scan/log
@@ -1483,6 +1488,7 @@ module.exports = class HostManager {
     json.ddns = sysManager.ddns;
     json.secondaryNetwork = sysManager.sysinfo && sysManager.sysinfo[sysManager.config.monitoringInterface2];
     json.remoteSupport = frp.started;
+    json.model = platform.getName();
     if(frp.started) {
       json.remoteSupportConnID = frp.port + ""
       json.remoteSupportPassword = json.ssh
@@ -1930,6 +1936,13 @@ module.exports = class HostManager {
       })()
     }
 
+    async jwtTokenForInit(json) {
+        const token = await tokenManager.getToken();
+        if(token) {
+            json.jwt = token;
+        }        
+    }
+
   encipherMembersForInit(json) {
     return async(() => {
       let members = await (rclient.smembersAsync("sys:ept:members"))
@@ -1993,7 +2006,8 @@ module.exports = class HostManager {
             this.natDataForInit(json),
             this.ignoredIPDataForInit(json),
             this.boneDataForInit(json),
-            this.encipherMembersForInit(json)
+            this.encipherMembersForInit(json),
+            this.jwtTokenForInit(json)
           ]
 
           this.basicDataForInit(json, options);

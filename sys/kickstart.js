@@ -54,8 +54,10 @@
   const rclient = require('../util/redis_manager.js').getRedisClient()
   let SSH = require('../extension/ssh/ssh.js');
   let ssh = new SSH('info');
-  let led = require('../util/Led.js');
-  
+
+  const platformLoader = require('../platform/PlatformLoader.js');
+  const platform = platformLoader.getPlatform();
+
   let util = require('util');
   
   let f = require('../net2/Firewalla.js');
@@ -74,6 +76,8 @@
   let interfaceDiscoverSensor = new InterfaceDiscoverSensor();
 
   const EptCloudExtension = require('../extension/ept/eptcloud.js');
+
+  const fwDiag = require('../extension/install/diag.js');
   
   // let NmapSensor = require('../sensor/NmapSensor');
   // let nmapSensor = new NmapSensor();
@@ -82,6 +86,10 @@
   let FWInvitation = require('./invitation.js');
 
   const Diag = require('../extension/diag/app.js');
+
+log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+log.forceInfo("FireKick Starting ");
+log.forceInfo("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
   
   function delay(t) {
     return new Promise(function(resolve) {
@@ -191,6 +199,7 @@
     let meta = JSON.stringify({
       'type': config.serviceType,
       'member': config.memberType,
+      'model': platform.getName()
     });
     eptcloud.eptcreateGroup(config.service, meta, config.endpoint_name, function (e, r) {
       log.info(r);
@@ -282,7 +291,13 @@
         });
         
         // new group without any apps bound;
-        led.on();
+        platform.turnOnPowerLED();
+
+        fwDiag.submitInfo({
+          event: "PAIRSTART",
+          msg:"Pairing Ready"
+        });
+
         if (count === 1) {
           let fwInvitation = new FWInvitation(eptcloud, gid, symmetrickey);
           fwInvitation.diag = diag
@@ -296,7 +311,13 @@
               callback(null, true);
               
               log.forceInfo("EXIT KICKSTART AFTER JOIN");
-              led.off();
+              platform.turnOffPowerLED();
+
+              fwDiag.submitInfo({
+                event: "PAIREND",
+                msg: "Pairing Ended"
+              });
+
               setTimeout(()=> {
                 require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
                 });
@@ -307,9 +328,15 @@
           let onTimeout = function() {
             callback("404", false);
             
-            led.off();
+            platform.turnOffPowerLED();
+
+            fwDiag.submitInfo({
+              event: "PAIREND",
+              msg: "Pairing Ended"
+            });
+
             log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
-            require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+            require('child_process').exec("sleep 2; sudo systemctl stop firekick"  , (err, out, code) => {
             });
           }
           
@@ -342,7 +369,13 @@
               await rclient.hsetAsync("sys:ept", "group_member_cnt", count + 1)
               
               log.forceInfo("EXIT KICKSTART AFTER JOIN");
-              led.off();
+              platform.turnOffPowerLED();
+
+              fwDiag.submitInfo({
+                event: "PAIREND",
+                msg: "Pairing Ended"
+              });
+
               require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
               });
             })();
@@ -350,8 +383,14 @@
           
           let onTimeout = function() {
             log.forceInfo("EXIT KICKSTART AFTER TIMEOUT");
-            led.off();
-            require('child_process').exec("sudo systemctl stop firekick"  , (err, out, code) => {
+            platform.turnOffPowerLED();
+
+            fwDiag.submitInfo({
+              event: "PAIREND",
+              msg: "Pairing Ended"
+            });
+
+            require('child_process').exec("sleep 2; sudo systemctl stop firekick"  , (err, out, code) => {
             });
           }
           
