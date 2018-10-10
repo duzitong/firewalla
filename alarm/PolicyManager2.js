@@ -62,6 +62,8 @@ const domainBlock = require('../control/DomainBlock.js')()
 
 const categoryBlock = require('../control/CategoryBlock.js')()
 
+const portBlock = require('../control/PortBlock.js')()
+
 const scheduler = require('../extension/scheduler/scheduler.js')()
 
 const Queue = require('bee-queue')
@@ -892,6 +894,8 @@ class PolicyManager2 {
         break;
       case "category":
         return categoryBlock.blockCategory(policy.target)
+      case "port":
+        return portBlock.blockPort(policy.target)
       case "timer":
         // just send notification, purely testing purpose only
       default:
@@ -969,7 +973,12 @@ class PolicyManager2 {
           }
         })()
         break;
-
+      case "port":
+        return async(() => {
+          return portBlock.blockPort(policy.target, {
+            macSet: Block.getMacSet(policy.pid)
+          })
+        })
       default:
         return Promise.reject("Unsupported policy");
       }
@@ -1027,6 +1036,8 @@ class PolicyManager2 {
     case "category":
       return categoryBlock.unblockCategory(policy.target)
       break
+    case "port":
+      return portBlock.unblockPort(policy.target)
     default:
       return Promise.reject("Unsupported policy");
     }
@@ -1097,7 +1108,10 @@ class PolicyManager2 {
             return categoryBlock.unblockCategory(policy.target)
           }
         })()
-      
+      case "port":
+        return portBlock.unblockPort(policy.target, {
+          macSet: Block.getMacSet(policy.pid)
+        })
       default:
         return Promise.reject("Unsupported policy");
       }
